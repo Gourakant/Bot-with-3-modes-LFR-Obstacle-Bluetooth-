@@ -1,7 +1,7 @@
 # Bot-with-3-modes-LFR-Obstacle-Bluetooth-
-// ==================== Mode Selection ====================
-#define MODE0 A5
-#define MODE1 A6
+// ==================== Mode Selection Pins ====================
+#define MODE0 0  // D0
+#define MODE1 1  // D1
 
 // ==================== Shared Motor Driver Pins ====================
 #define IN1 4
@@ -21,7 +21,7 @@
 #define BT_TX 13
 SoftwareSerial bt(BT_RX, BT_TX);
 char btData;
-int motorSpeed = 200;
+int motorSpeed = 120;
 
 // ==================== Obstacle Avoiding Setup (Mode 2) ====================
 #define SERVO_PIN 3
@@ -29,7 +29,7 @@ int motorSpeed = 200;
 #define ECHO_PIN 9
 #define MAX_DISTANCE 200
 #define SAFE_DISTANCE 15
-#define MOTOR_SPEED 150       // <--- Move this here globally
+#define MOTOR_SPEED 150       // Motor speed for obstacle avoiding
 Servo myServo;
 NewPing sonar(TRIG_PIN, ECHO_PIN, MAX_DISTANCE);
 
@@ -63,16 +63,16 @@ void setup() {
   pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
   pinMode(EN1, OUTPUT); pinMode(EN2, OUTPUT);
 
-  Serial.begin(9600);
-  bt.begin(9600);
-
   // Servo for obstacle avoider
   myServo.attach(SERVO_PIN);
   myServo.write(90);
   delay(500);
+
+  // Initialize Bluetooth
+  bt.begin(9600);
 }
 
-// ==================== Loop ====================
+// ==================== Main Loop ====================
 void loop() {
   int m0 = digitalRead(MODE0);
   int m1 = digitalRead(MODE1);
@@ -83,11 +83,11 @@ void loop() {
   else if (m0 == LOW && m1 == HIGH) {
     runObstacleAvoiding();
   }
-  else if (m0 == HIGH && m1 == LOW) {
+  else if (m0 == HIGH && m1 == HIGH) {
     runBluetooth();
   }
   else {
-    stopAll();
+    stopAll();  // HIGH, LOW → unused
   }
 }
 
@@ -103,21 +103,15 @@ void runLFR() {
 
   // Finish Line
   if (s[0] && s[1] && s[2] && s[3] && s[4]) {
-    if (finishLineStartTime == 0) {
-      finishLineStartTime = millis();
-    } else if (millis() - finishLineStartTime >= 2000 && !finishLineDetected) {
+    if (finishLineStartTime == 0) finishLineStartTime = millis();
+    else if (millis() - finishLineStartTime >= 2000 && !finishLineDetected) {
       finishLineDetected = true;
       currentState = FINISH;
     }
-  } else {
-    finishLineStartTime = 0;
-  }
+  } else finishLineStartTime = 0;
 
   if (!finishLineDetected) {
-    if (s[0] && s[4] && millis() - lastIntersectionTime > 500) {
-      currentState = T_SECTION;
-      lastIntersectionTime = millis();
-    } 
+    if (s[0] && s[4] && millis() - lastIntersectionTime > 500) currentState = T_SECTION, lastIntersectionTime = millis();
     else if ((s[0] || s[1]) && !s[2] && !s[3] && !s[4]) currentState = L_TURN_LEFT;
     else if ((s[3] || s[4]) && !s[0] && !s[1] && !s[2]) currentState = L_TURN_RIGHT;
     else if (s[1] || s[3]) currentState = CURVE;
@@ -186,16 +180,10 @@ void stopAtFinish() {
 // ======================================================
 void runObstacleAvoiding() {
   int distance = getDistance();
-
-  if (distance > SAFE_DISTANCE) {
-    moveForward(MOTOR_SPEED);
-  } else {
-    stopAll();
-    delay(100);
-    moveBackward(MOTOR_SPEED);
-    delay(300);
-    stopAll();
-    delay(100);
+  if (distance > SAFE_DISTANCE) moveForward(MOTOR_SPEED);
+  else {
+    stopAll(); delay(100);
+    moveBackward(MOTOR_SPEED); delay(300); stopAll(); delay(100);
 
     myServo.write(150); delay(400);
     int leftD = getDistance();
@@ -208,11 +196,7 @@ void runObstacleAvoiding() {
     if (leftD > SAFE_DISTANCE || rightD > SAFE_DISTANCE) {
       if (leftD >= rightD) turnLeft();
       else turnRight();
-    } else {
-      moveBackward(MOTOR_SPEED);
-      delay(500);
-      stopAll();
-    }
+    } else { moveBackward(MOTOR_SPEED); delay(500); stopAll(); }
   }
 }
 
@@ -238,19 +222,15 @@ void moveBackward(int spd) {
 void turnLeft() {
   digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH);
   digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
-  analogWrite(EN1, MOTOR_SPEED);
-  analogWrite(EN2, MOTOR_SPEED);
-  delay(400);
-  stopAll();
+  analogWrite(EN1, MOTOR_SPEED); analogWrite(EN2, MOTOR_SPEED);
+  delay(100); stopAll();
 }
 
 void turnRight() {
   digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
   digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH);
-  analogWrite(EN1, MOTOR_SPEED);
-  analogWrite(EN2, MOTOR_SPEED);
-  delay(400);
-  stopAll();
+  analogWrite(EN1, MOTOR_SPEED); analogWrite(EN2, MOTOR_SPEED);
+  delay(100); stopAll();
 }
 
 // ======================================================
@@ -259,18 +239,16 @@ void turnRight() {
 void runBluetooth() {
   if (bt.available()) {
     btData = bt.read();
-    Serial.println(btData);
-
     switch (btData) {
       case 'F': moveForward(motorSpeed); break;
       case 'B': moveBackward(motorSpeed); break;
       case 'L': turnLeft(); break;
       case 'R': turnRight(); break;
       case 'S': stopAll(); break;
-      case '1': motorSpeed = 100; break;
-      case '2': motorSpeed = 150; break;
-      case '3': motorSpeed = 200; break;
-      case '4': motorSpeed = 255; break;
+      case '1': motorSpeed = 90; break;
+      case '2': motorSpeed = 92; break;
+      case '3': motorSpeed = 94; break;
+      case '4': motorSpeed = 96; break;
     }
   }
 }
@@ -279,8 +257,7 @@ void runBluetooth() {
 // =============== Shared Stop Function =================
 // ======================================================
 void stopAll() {
-  analogWrite(EN1, 0);
-  analogWrite(EN2, 0);
+  analogWrite(EN1, 0); analogWrite(EN2, 0);
   digitalWrite(IN1, LOW); digitalWrite(IN2, LOW);
   digitalWrite(IN3, LOW); digitalWrite(IN4, LOW);
 }
