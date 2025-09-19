@@ -95,42 +95,76 @@ void loop() {
 // =============== MODE 1: LFR FUNCTIONS ================
 // ======================================================
 void runLFR() {
-  int s[5] = {
-    !digitalRead(IR1), !digitalRead(IR2),
-    !digitalRead(IR3), !digitalRead(IR4),
-    !digitalRead(IR5)
+int s[5] = {
+    !digitalRead(IR1),  // Leftmost
+    !digitalRead(IR2),  // Left mid
+    !digitalRead(IR3),  // Center
+    !digitalRead(IR4),  // Right mid
+    !digitalRead(IR5)   // Rightmost
   };
 
-  // Finish Line
+  // === Finish Line Detection ===
   if (s[0] && s[1] && s[2] && s[3] && s[4]) {
-    if (finishLineStartTime == 0) finishLineStartTime = millis();
-    else if (millis() - finishLineStartTime >= 2000 && !finishLineDetected) {
+    if (finishLineStartTime == 0) {
+      finishLineStartTime = millis();  // Start timing
+    } else if (millis() - finishLineStartTime >= 2000 && !finishLineDetected) {
       finishLineDetected = true;
       currentState = FINISH;
     }
-  } else finishLineStartTime = 0;
-
-  if (!finishLineDetected) {
-    if (s[0] && s[4] && millis() - lastIntersectionTime > 500) currentState = T_SECTION, lastIntersectionTime = millis();
-    else if ((s[0] || s[1]) && !s[2] && !s[3] && !s[4]) currentState = L_TURN_LEFT;
-    else if ((s[3] || s[4]) && !s[0] && !s[1] && !s[2]) currentState = L_TURN_RIGHT;
-    else if (s[1] || s[3]) currentState = CURVE;
-    else if (s[2]) currentState = NORMAL;
-    else currentState = LOST;
+  } else {
+    finishLineStartTime = 0;  // Reset timer if condition breaks
   }
 
+  // === Determine Track State ===
+  if (!finishLineDetected) {
+    if (s[0] && s[4] && millis() - lastIntersectionTime > 500) {
+      currentState = T_SECTION;
+      lastIntersectionTime = millis();
+    } 
+    else if ((s[0] || s[1]) && !s[2] && !s[3] && !s[4]) {
+      currentState = L_TURN_LEFT;
+    } 
+    else if ((s[3] || s[4]) && !s[0] && !s[1] && !s[2]) {
+      currentState = L_TURN_RIGHT;
+    } 
+    else if (s[1] || s[3]) {
+      currentState = CURVE;
+    } 
+    else if (s[2]) {
+      currentState = NORMAL;
+    } 
+    else {
+      currentState = LOST;
+    }
+  }
+
+  // === Execute State Action ===
   switch (currentState) {
-    case T_SECTION: followRightL(s); break;
-    case L_TURN_LEFT: followLeftL(s); break;
-    case L_TURN_RIGHT: followRightL(s); break;
-    case CURVE: followCurve(s[1], s[3]); break;
-    case NORMAL: forwardLFR(); break;
-    case LOST: searchLine(); break;
-    case FINISH: stopAtFinish(); break;
+    case T_SECTION:
+      handleTSection(s);
+      break;
+    case L_TURN_LEFT:
+      followLeftL(s);
+      break;
+    case L_TURN_RIGHT:
+      followRightL(s);
+      break;
+    case CURVE:
+      followCurve(s[1], s[3]);
+      break;
+    case NORMAL:
+      forward();
+      break;
+    case LOST:
+      searchLine();
+      break;
+    case FINISH:
+      stopAtFinish();
+      break;
   }
 }
 
-void forwardLFR() {
+void forward() {
   analogWrite(EN1, baseSpeed);
   analogWrite(EN2, baseSpeed);
   digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
@@ -138,41 +172,119 @@ void forwardLFR() {
 }
 
 void followLeftL(int s[5]) {
-  analogWrite(EN1, sharpTurnSpeed);
-  analogWrite(EN2, sharpTurnSpeed);
-  digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
-  digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH);
-  delay(400);
+  if (!isTurning) {
+    isTurning = true;
+    
+    analogWrite(EN1, sharpTurnSpeed);
+    analogWrite(EN2, sharpTurnSpeed);
+    digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);  // Left reverse
+    digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH);  // Right forward
+
+    unsigned long start = millis();
+    while (millis() - start < 1000) {
+      if (!digitalRead(IR3)) break;
+    }
+    
+    forward();
+    delay(100);
+    isTurning = false;
+  }
 }
 
 void followRightL(int s[5]) {
-  analogWrite(EN1, sharpTurnSpeed);
-  analogWrite(EN2, sharpTurnSpeed);
-  digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH);
-  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
-  delay(400);
+  if (!isTurning) {
+    isTurning = true;
+    
+    analogWrite(EN1, sharpTurnSpeed);
+    analogWrite(EN2, sharpTurnSpeed);
+    digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH);  // Left forward
+    digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);  // Right reverse
+
+    unsigned long start = millis();
+    while (millis() - start < 1000) {
+      if (!digitalRead(IR3)) break;
+    }
+    
+    forward();
+    delay(100);
+    isTurning = false;
+  }
+}
+
+void handleTSection(int s[5]) {
+  // Default right turn
+  followRightL(s);
+  delay(300);
 }
 
 void followCurve(bool leftActive, bool rightActive) {
-  int speedLeft = curveSpeed, speedRight = curveSpeed;
-  if (leftActive) speedRight -= 30;
+  int speedLeft = curveSpeed;
+  int speedRight = curveSpeed;
+
+  if (leftActive)  speedRight -= 30;
   if (rightActive) speedLeft -= 30;
+
   analogWrite(EN1, speedLeft);
   analogWrite(EN2, speedRight);
   digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
   digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
 }
 
+// ✅ Improved Search Line function
 void searchLine() {
-  analogWrite(EN1, 100);
-  analogWrite(EN2, 80);
-  digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH);
-  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
+  static unsigned long spinStartTime = 0;
+  static bool spinLeft = true;
+
+  int s[5] = {
+    !digitalRead(IR1),
+    !digitalRead(IR2),
+    !digitalRead(IR3),
+    !digitalRead(IR4),
+    !digitalRead(IR5)
+  };
+
+  // ✅ If line is found → exit search mode
+  if (s[0] || s[1] || s[2] || s[3] || s[4]) {
+    forward();
+    spinStartTime = 0;   // reset timer
+    return;
+  }
+
+  // === Line not found → continue spinning ===
+  if (spinStartTime == 0) {
+    spinStartTime = millis();  // start timing
+  }
+
+  if (spinLeft) {
+    // spin left
+    analogWrite(EN1, 100);
+    analogWrite(EN2, 80);
+    digitalWrite(IN1, LOW);  digitalWrite(IN2, HIGH);  // Left backward
+    digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);   // Right forward
+  } else {
+    // spin right
+    analogWrite(EN1, 100);
+    analogWrite(EN2, 80);
+    digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);   // Left forward
+    digitalWrite(IN3, LOW);  digitalWrite(IN4, HIGH);  // Right backward
+  }
+
+  // After 1.5s → change direction
+  if (millis() - spinStartTime >= 1500) {
+    spinLeft = !spinLeft;       // flip direction
+    spinStartTime = millis();   // reset timer
+  }
 }
 
 void stopAtFinish() {
-  stopAll();
-  while (true);
+  analogWrite(EN1, 0);
+  analogWrite(EN2, 0);
+  digitalWrite(IN1, LOW); digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW); digitalWrite(IN4, LOW);
+
+  Serial.println("Finish line detected. Robot stopped.");
+
+  while (true);  // Stop permanently
 }
 
 // ======================================================
