@@ -1,4 +1,5 @@
 # Bot-with-3-modes-LFR-Obstacle-Bluetooth-
+
 // ==================== Mode Selection Pins ====================
 #define MODE0 0  // D0
 #define MODE1 1  // D1
@@ -292,23 +293,46 @@ void stopAtFinish() {
 // ======================================================
 void runObstacleAvoiding() {
   int distance = getDistance();
-  if (distance > SAFE_DISTANCE) moveForward(MOTOR_SPEED);
-  else {
-    stopAll(); delay(100);
-    moveBackward(MOTOR_SPEED); delay(300); stopAll(); delay(100);
 
-    myServo.write(150); delay(400);
-    int leftD = getDistance();
+  if (distance > SAFE_DISTANCE) {
+    // No obstacle → move forward
+    moveForward(MOTOR_SPEED);
+  } else {
+    // Obstacle detected → stop and move backward briefly
+    stopMotors();
+    delay(100);
+    moveBackward(MOTOR_SPEED);
+    delay(300);
+    stopMotors();
+    delay(100);
 
-    myServo.write(30); delay(400);
-    int rightD = getDistance();
+    // Scan left
+    myServo.write(150);
+    delay(400);
+    int distanceLeft = getDistance();
 
-    myServo.write(90); delay(200);
+    // Scan right
+    myServo.write(30);
+    delay(400);
+    int distanceRight = getDistance();
 
-    if (leftD > SAFE_DISTANCE || rightD > SAFE_DISTANCE) {
-      if (leftD >= rightD) turnLeft();
-      else turnRight();
-    } else { moveBackward(MOTOR_SPEED); delay(500); stopAll(); }
+    // Return to center
+    myServo.write(90);
+    delay(200);
+
+    // Decide direction
+    if (distanceLeft > SAFE_DISTANCE || distanceRight > SAFE_DISTANCE) {
+      if (distanceLeft >= distanceRight) {
+        turnLeft();
+      } else {
+        turnRight();
+      }
+    } else {
+      // Both sides blocked → move backward again
+      moveBackward(MOTOR_SPEED);
+      delay(500);
+      stopMotors();
+    }
   }
 }
 
@@ -319,30 +343,54 @@ int getDistance() {
   return cm;
 }
 
-void moveForward(int spd) {
-  digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
-  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
-  analogWrite(EN1, spd); analogWrite(EN2, spd);
+
+void moveForward(int speedVal) {
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+  analogWrite(EN1, speedVal);
+  analogWrite(EN2, speedVal);
 }
 
-void moveBackward(int spd) {
-  digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH);
-  digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH);
-  analogWrite(EN1, spd); analogWrite(EN2, spd);
+void moveBackward(int speedVal) {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
+  analogWrite(EN1, speedVal);
+  analogWrite(EN2, speedVal);
 }
 
 void turnLeft() {
-  digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH);
-  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
-  analogWrite(EN1, MOTOR_SPEED); analogWrite(EN2, MOTOR_SPEED);
-  delay(100); stopAll();
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+  analogWrite(EN1, MOTOR_SPEED);
+  analogWrite(EN2, MOTOR_SPEED);
+  delay(400);
+  stopMotors();
 }
 
 void turnRight() {
-  digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
-  digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH);
-  analogWrite(EN1, MOTOR_SPEED); analogWrite(EN2, MOTOR_SPEED);
-  delay(100); stopAll();
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
+  analogWrite(EN1, MOTOR_SPEED);
+  analogWrite(EN2, MOTOR_SPEED);
+  delay(400);
+  stopMotors();
+}
+
+void stopMotors() {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, LOW);
+  analogWrite(EN1, 0);
+  analogWrite(EN2, 0);
 }
 
 // ======================================================
